@@ -8,7 +8,8 @@ void initEncoder() {
   pinMode(ROTARY_DT, INPUT_PULLUP);
   pinMode(ROTARY_SW, INPUT_PULLUP);
   
-  // Give pins a millisecond to stabilize before reading initial state
+  pinMode(EXTRA_BTN, INPUT_PULLUP); 
+  
   delay(10); 
   lastClkState = digitalRead(ROTARY_CLK);
 }
@@ -39,6 +40,17 @@ bool isButtonPressed() {
     delay(50); // Button debounce
     if (digitalRead(ROTARY_SW) == LOW) {
       while(digitalRead(ROTARY_SW) == LOW) { delay(10); } 
+      return true;
+    }
+  }
+  return false;
+}
+
+bool isExtraButtonPressed() {
+  if (digitalRead(EXTRA_BTN) == LOW) {
+    delay(50); // Button debounce
+    if (digitalRead(EXTRA_BTN) == LOW) {
+      while(digitalRead(EXTRA_BTN) == LOW) { delay(10); } 
       return true;
     }
   }

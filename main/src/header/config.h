@@ -12,7 +12,7 @@
 // --- ROTARY ENCODER PINS ---
 #define ROTARY_CLK 2  
 #define ROTARY_DT  3  
-#define ROTARY_SW  20   
+#define ROTARY_SW  20
 #define EXTRA_BTN  5   
 
 

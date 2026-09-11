@@ -4,3 +4,4 @@
 void initEncoder();
 int getEncoderScroll();
 bool isButtonPressed();
+bool isExtraButtonPressed();

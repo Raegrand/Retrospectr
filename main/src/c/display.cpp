@@ -1,7 +1,9 @@
 #include "../header/display.h"
 #include "../header/config.h"
+#include "../header/encoder.h"
 #include <SPI.h>
 #include <SD.h>
+#include <Fonts/FreeSerifItalic18pt7b.h>
 
 // Initialize the TFT object
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
@@ -12,7 +14,7 @@ void initDisplay() {
 
   tft.init(240, 280);
   tft.setRotation(3); // Keeping your preferred rotation
-  tft.fillScreen(ST77XX_BROWN);
+  tft.fillScreen(ST77XX_BLACK);
 }
 
 void showMessage(String msg, uint16_t color) {
@@ -125,18 +127,78 @@ void drawIcon(String filename, int x, int y, int width, int height) {
   digitalWrite(SD_CS, HIGH);
 }
 
-void displayWord(String word) {
+bool displayWord(String word, int speedMs) {
   tft.fillScreen(ST77XX_BLACK);
-  int textWidth = word.length() * 18;
-  int cursorX = (TFT_WIDTH - textWidth) / 2;
-  if (cursorX < 0) cursorX = 0;
+  tft.setTextColor(ST77XX_WHITE);
+  tft.setTextSize(1);
+  tft.setFont(&FreeSerifItalic18pt7b  );
 
-  tft.setCursor(cursorX, 100);
+  // Measure bounding box to calculate horizontal width ONLY
+  int16_t x1, y1;
+  uint16_t w, h;
+  tft.getTextBounds(word, 0, 0, &x1, &y1, &w, &h);
+
+  // Dynamically center horizontally across the X axis
+  int cursorX = (TFT_WIDTH - w) / 2;
+  if (cursorX < 0) cursorX = 0; // Prevent left overflow for long words
+  
+  // FIXED BASELINE: Lock Y to a constant position on screen.
+  // Adding ~10-12px places the text baseline just below center screen,
+  // keeping ascenders and descenders perfectly aligned across every word.
+  int cursorY = (TFT_HEIGHT / 2) + 8;
+
+  tft.setCursor(cursorX, cursorY);
   tft.print(word);
-  delay(350);
+
+  // Non-blocking interruptible delay
+  unsigned long startWait = millis();
+  while (millis() - startWait < (unsigned long)speedMs) {
+    if (isButtonPressed() || isExtraButtonPressed()) {
+      tft.setFont(); // Reset to system font before exiting
+      return true;
+    }
+    delay(10);
+  }
+
+  tft.setFont(); // Reset to system font
+  return false;
 }
 
-void readTextFile(int index) {
+// Helper function to strip punctuation and calculate dynamic delay pacing
+bool processAndDisplayWord(String rawWord, int baseSpeedMs) {
+  if (rawWord.length() == 0) return false;
+
+  bool hasPeriod = false;
+  bool hasComma = false;
+  String cleanWord = "";
+
+  // Strip '.' and ',' while flagging their presence
+  for (size_t j = 0; j < rawWord.length(); j++) {
+    char ch = rawWord[j];
+    if (ch == '.') {
+      hasPeriod = true;
+    } else if (ch == ',') {
+      hasComma = true;
+    } else {
+      cleanWord += ch;
+    }
+  }
+
+  // If the token was strictly punctuation (e.g. "..."), skip rendering empty string
+  if (cleanWord.length() == 0) return false;
+
+  // Calculate dynamic pause duration
+  int finalDelay = baseSpeedMs;
+  if (hasPeriod) {
+    finalDelay += 500; // Longer pause for period
+  } else if (hasComma) {
+    finalDelay += 300; // Medium pause for comma
+  }
+
+  return displayWord(cleanWord, finalDelay);
+}
+
+void readTextFile(int index, int speedMs) {
   String path = "/gallery/" + String(index) + ".txt";
 
   digitalWrite(TFT_CS, HIGH);
@@ -149,8 +211,6 @@ void readTextFile(int index) {
     return;
   }
 
-  // --- Phase 1: read the ENTIRE text file into RAM first. ---
-  // No TFT activity happens during this phase.
   size_t fileSize = txtFile.size();
   char *textBuffer = (char *)malloc(fileSize + 1);
   if (!textBuffer) {
@@ -165,26 +225,74 @@ void readTextFile(int index) {
   txtFile.close();
   digitalWrite(SD_CS, HIGH);
 
-  // --- Phase 2: display words from the buffer. ---
-  // No SD activity happens during this phase.
   tft.fillScreen(ST77XX_BLACK);
-  tft.setTextColor(ST77XX_WHITE);
-  tft.setTextSize(3);
 
   String currentWord = "";
+  bool interrupted = false;
+
   for (size_t i = 0; i < totalRead; i++) {
     char c = textBuffer[i];
     if (c == ' ' || c == '\n' || c == '\r') {
       if (currentWord.length() > 0) {
-        displayWord(currentWord);
+        if (processAndDisplayWord(currentWord, speedMs)) {
+          interrupted = true;
+          break; // Exit loop on button interruption
+        }
         currentWord = "";
       }
     } else {
       currentWord += c;
     }
   }
-  if (currentWord.length() > 0) displayWord(currentWord);
+
+  // Process the last word if file ends without trailing whitespace
+  if (!interrupted && currentWord.length() > 0) {
+    processAndDisplayWord(currentWord, speedMs);
+  }
 
   digitalWrite(TFT_CS, HIGH);
-  free(textBuffer);
+  free(textBuffer); // Clean memory deallocation
+}
+
+void showTVStatic(int duration_ms) {
+  // Ensure SD card is deselected so it doesn't eavesdrop on the SPI bus
+  digitalWrite(SD_CS, HIGH); 
+  digitalWrite(TFT_CS, HIGH);
+
+  // Allocate a single line buffer to keep RAM usage low
+  size_t pixelsPerLine = tft.width(); 
+  uint16_t *lineBuffer = (uint16_t *)malloc(pixelsPerLine * 2);
+  
+  if (!lineBuffer) {
+    Serial.println("Failed to allocate static buffer!");
+    return;
+  }
+
+  unsigned long start = millis();
+  
+  tft.startWrite();
+  // Loop rapidly until the duration expires
+  while (millis() - start < duration_ms) {
+    tft.setAddrWindow(0, 0, tft.width(), tft.height());
+    
+    for (int y = 0; y < tft.height(); y++) {
+      for (int x = 0; x < pixelsPerLine; x++) {
+        // Use the ESP32 hardware RNG for lightning-fast noise calculation
+        // Bitwise AND (& 1) randomly picks either 0 (false) or 1 (true)
+        lineBuffer[x] = (esp_random() & 1) ? ST77XX_WHITE : ST77XX_BLACK;
+      }
+      // Blast the randomized line to the screen
+      tft.writePixels(lineBuffer, pixelsPerLine);
+    }
+  }
+  tft.endWrite();
+  
+  digitalWrite(TFT_CS, HIGH);
+  free(lineBuffer); // Always free the memory!
+}
+
+void sleepDisplay() {
+  tft.startWrite();
+  tft.writeCommand(0x10); // ST7789 SLPIN (Sleep In) command
+  tft.endWrite();
 }

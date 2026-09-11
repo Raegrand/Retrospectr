@@ -10,5 +10,12 @@ void drawIcon(String filename, int x, int y, int width, int height);
 
 void drawBinByIndex(int index);
 
-void readTextFile(int index);
-void displayWord(String word);
+void readTextFile(int index, int speedMs);
+
+bool displayWord(String word, int speedMs);
+
+void showTVStatic(int duration_ms);
+
+void sleepDisplay();
+
+void setBrightness(int level);
