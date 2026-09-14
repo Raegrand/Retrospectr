@@ -4,6 +4,10 @@
 #include <SPI.h>
 #include <SD.h>
 #include <Fonts/FreeSerifItalic18pt7b.h>
+#include <Fonts/FreeSerifItalic12pt7b.h> 
+#include <Fonts/FreeSerifBold18pt7b.h> 
+#include <Fonts/FreeSerifItalic9pt7b.h>
+#include <Fonts/FreeSerifBold12pt7b.h>
 
 // Initialize the TFT object
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
@@ -30,15 +34,6 @@ void drawBinByIndex(int index) {
   drawIcon(path, 0, 0, TFT_WIDTH, TFT_HEIGHT);
 }
 
-// Attempts to open a file, and if it fails, re-inits the SD card once
-// and retries. Only fires on an actual failure - never called unconditionally.
-//
-// IMPORTANT: the ESP32 Arduino SD driver has a known bug (see
-// espressif/arduino-esp32#9218) where it doesn't reliably restore SPI mode 0
-// before talking to the card. If the TFT left the bus in mode 3 from its
-// last write, the very next SD command gets sent in the wrong clock
-// polarity/phase and the card rejects it. Forcing mode 0 with a throwaway
-// transaction right before every SD access works around this.
 void forceSPIMode0ForSD() {
   SPI.beginTransaction(SPISettings(4000000, MSBFIRST, SPI_MODE0));
   SPI.endTransaction();
@@ -127,87 +122,96 @@ void drawIcon(String filename, int x, int y, int width, int height) {
   digitalWrite(SD_CS, HIGH);
 }
 
-bool displayWord(String word, int speedMs) {
-  tft.fillScreen(ST77XX_BLACK);
+bool displayWord(String word, int speedMs, String bgPath, String headerText) {
+  if (bgPath.length() > 0) {
+    drawIcon(bgPath, 0, 0, TFT_WIDTH, TFT_HEIGHT);
+  } else {
+    tft.fillScreen(ST77XX_BLACK);
+  }
+
+  // Draw Header / Title if provided (e.g., "DAILY SCRIPTURE")
+  if (headerText.length() > 0) {
+    tft.setFont(); // Use standard small font for header
+    tft.setTextColor(ST77XX_YELLOW);
+    tft.setCursor(10, 10);
+    tft.print(headerText);
+  }
+
+  // Render Main Word
   tft.setTextColor(ST77XX_WHITE);
   tft.setTextSize(1);
-  tft.setFont(&FreeSerifItalic18pt7b  );
+  tft.setFont(&FreeSerifItalic18pt7b);
 
-  // Measure bounding box to calculate horizontal width ONLY
   int16_t x1, y1;
   uint16_t w, h;
   tft.getTextBounds(word, 0, 0, &x1, &y1, &w, &h);
 
-  // Dynamically center horizontally across the X axis
   int cursorX = (TFT_WIDTH - w) / 2;
-  if (cursorX < 0) cursorX = 0; // Prevent left overflow for long words
+  if (cursorX < 0) cursorX = 0;
   
-  // FIXED BASELINE: Lock Y to a constant position on screen.
-  // Adding ~10-12px places the text baseline just below center screen,
-  // keeping ascenders and descenders perfectly aligned across every word.
   int cursorY = (TFT_HEIGHT / 2) + 8;
 
   tft.setCursor(cursorX, cursorY);
   tft.print(word);
 
-  // Non-blocking interruptible delay
+  // Non-blocking wait loop
   unsigned long startWait = millis();
   while (millis() - startWait < (unsigned long)speedMs) {
     if (isButtonPressed() || isExtraButtonPressed()) {
-      tft.setFont(); // Reset to system font before exiting
-      return true;
+      tft.setFont();
+      return true; // Interrupted
     }
     delay(10);
   }
 
-  tft.setFont(); // Reset to system font
+  tft.setFont();
   return false;
 }
 
-// Helper function to strip punctuation and calculate dynamic delay pacing
-bool processAndDisplayWord(String rawWord, int baseSpeedMs) {
+bool processAndDisplayWord(String rawWord, int baseSpeedMs, String bgPath, String headerText) {
   if (rawWord.length() == 0) return false;
 
   bool hasPeriod = false;
   bool hasComma = false;
   String cleanWord = "";
 
-  // Strip '.' and ',' while flagging their presence
+  // Strip punctuation while detecting pauses
   for (size_t j = 0; j < rawWord.length(); j++) {
     char ch = rawWord[j];
-    if (ch == '.') {
-      hasPeriod = true;
-    } else if (ch == ',') {
-      hasComma = true;
-    } else {
-      cleanWord += ch;
-    }
+    if (ch == '.') hasPeriod = true;
+    else if (ch == '!') hasPeriod = true;
+    else if (ch == '?') hasPeriod = true;
+    else if (ch == ':') hasPeriod = true;
+    else if (ch == ',') hasComma = true;
+    else cleanWord += ch;
   }
 
-  // If the token was strictly punctuation (e.g. "..."), skip rendering empty string
   if (cleanWord.length() == 0) return false;
 
-  // Calculate dynamic pause duration
-  int finalDelay = baseSpeedMs;
+  // 1. DYNAMIC LENGTH PACING: Add ~25ms per character
+  // A 2-letter word ("in") adds +50ms
+  // A 10-letter word ("strengthens") adds +250ms
+  int lengthBonus = cleanWord.length() * 25;
+  int finalDelay = baseSpeedMs + lengthBonus;
+
+  // 2. PUNCTUATION DELAYS: Stack on top of length calculation
   if (hasPeriod) {
-    finalDelay += 500; // Longer pause for period
+    finalDelay += 500;
   } else if (hasComma) {
-    finalDelay += 300; // Medium pause for comma
+    finalDelay += 300;
   }
 
-  return displayWord(cleanWord, finalDelay);
+  return displayWord(cleanWord, finalDelay, bgPath, headerText);
 }
 
-void readTextFile(int index, int speedMs) {
-  String path = "/gallery/" + String(index) + ".txt";
-
+void readTextFileCustom(String textPath, int speedMs, String bgPath) {
   digitalWrite(TFT_CS, HIGH);
-  File txtFile = openWithRetry(path);
+  File txtFile = openWithRetry(textPath);
   digitalWrite(SD_CS, HIGH);
 
   if (!txtFile) {
-    Serial.print("No text file found: ");
-    Serial.println(path);
+    Serial.print("Custom text file not found: ");
+    Serial.println(textPath);
     return;
   }
 
@@ -219,24 +223,22 @@ void readTextFile(int index, int speedMs) {
     digitalWrite(SD_CS, HIGH);
     return;
   }
+  
   size_t totalRead = txtFile.read((uint8_t *)textBuffer, fileSize);
   textBuffer[totalRead] = '\0';
-
   txtFile.close();
   digitalWrite(SD_CS, HIGH);
-
-  tft.fillScreen(ST77XX_BLACK);
 
   String currentWord = "";
   bool interrupted = false;
 
   for (size_t i = 0; i < totalRead; i++) {
     char c = textBuffer[i];
-    if (c == ' ' || c == '\n' || c == '\r') {
+    if (c == ' ' or c == '\n' or c == '\r') {
       if (currentWord.length() > 0) {
-        if (processAndDisplayWord(currentWord, speedMs)) {
+        if (processAndDisplayWord(currentWord, speedMs, bgPath)) {
           interrupted = true;
-          break; // Exit loop on button interruption
+          break;
         }
         currentWord = "";
       }
@@ -245,13 +247,347 @@ void readTextFile(int index, int speedMs) {
     }
   }
 
-  // Process the last word if file ends without trailing whitespace
   if (!interrupted && currentWord.length() > 0) {
-    processAndDisplayWord(currentWord, speedMs);
+    processAndDisplayWord(currentWord, speedMs, bgPath);
   }
 
   digitalWrite(TFT_CS, HIGH);
-  free(textBuffer); // Clean memory deallocation
+  free(textBuffer);
+}
+
+void displayStaticText(String headerText, String bodyText, String bgPath) {
+  if (bgPath.length() > 0) {
+    drawIcon(bgPath, 0, 0, TFT_WIDTH, TFT_HEIGHT);
+  } else {
+    tft.fillScreen(ST77XX_BLACK);
+  }
+
+  int marginX = 16;
+  int maxWidth = TFT_WIDTH - (marginX * 2);
+  int bodyLineHeight = 24;
+  int headerSpacing = 36;
+
+  // --- PASS 1: Pre-calculate total height for vertical centering ---
+  tft.setFont(&FreeSerifItalic12pt7b);
+  tft.setTextSize(1);
+
+  // Dynamically calculate accurate space character width for 12pt font
+  int16_t x1, y1;
+  uint16_t w1, w2, h;
+  tft.getTextBounds("a a", 0, 0, &x1, &y1, &w1, &h);
+  tft.getTextBounds("aa", 0, 0, &x1, &y1, &w2, &h);
+  int spaceWidth = w1 - w2; 
+
+  int lineCount = 1;
+  int testX = marginX;
+  String currentWord = "";
+
+  for (size_t i = 0; i < bodyText.length(); i++) {
+    char c = bodyText[i];
+    if (c == ' ' or c == '\n' or i == bodyText.length() - 1) {
+      if (i == bodyText.length() - 1 && c != ' ' && c != '\n') {
+        currentWord += c;
+      }
+      if (currentWord.length() > 0) {
+        uint16_t w;
+        tft.getTextBounds(currentWord, 0, 0, &x1, &y1, &w, &h);
+
+        if (testX + w > marginX + maxWidth) {
+          lineCount++;
+          testX = marginX;
+        }
+        testX += w + spaceWidth; // Include calculated space width
+        currentWord = "";
+      }
+      if (c == '\n') {
+        lineCount++;
+        testX = marginX;
+      }
+    } else {
+      currentWord += c;
+    }
+  }
+
+  int totalBodyHeight = lineCount * bodyLineHeight;
+  int totalBlockHeight = (headerText.length() > 0 ? headerSpacing : 0) + totalBodyHeight;
+
+  int startY = (TFT_HEIGHT - totalBlockHeight) / 2;
+  if (startY < 8) startY = 8;
+
+  // --- PASS 2: Render Header & Body Text ---
+  int cursorY = startY;
+
+  // 1. Draw Location Reference Header
+  if (headerText.length() > 0) {
+    String cleanHeader = headerText;
+    cleanHeader.replace('_', ' '); // Automatically converts "1_Corinthians" -> "1 Corinthians"
+    tft.setFont(&FreeSerifBold18pt7b);
+    tft.setTextColor(ST77XX_WHITE);
+    tft.setTextSize(1);
+    tft.setCursor(marginX, cursorY + 20);
+    tft.print(cleanHeader);
+    cursorY += headerSpacing;
+  }
+
+  // 2. Draw Scripture Body Paragraph
+  tft.setFont(&FreeSerifItalic12pt7b);
+  tft.setTextColor(ST77XX_WHITE);
+  tft.setTextSize(1);
+
+  int cursorX = marginX;
+  int bodyBaselineY = cursorY + 16;
+
+  currentWord = "";
+  for (size_t i = 0; i < bodyText.length(); i++) {
+    char c = bodyText[i];
+    if (c == ' ' || c == '\n' || i == bodyText.length() - 1) {
+      if (i == bodyText.length() - 1 && c != ' ' && c != '\n') {
+        currentWord += c;
+      }
+      if (currentWord.length() > 0) {
+        uint16_t w;
+        tft.getTextBounds(currentWord, 0, 0, &x1, &y1, &w, &h);
+
+        // Word-wrap if text exceeds screen margin
+        if (cursorX + w > marginX + maxWidth) {
+          cursorX = marginX;
+          bodyBaselineY += bodyLineHeight;
+        }
+
+        tft.setCursor(cursorX, bodyBaselineY);
+        tft.print(currentWord);
+        cursorX += w + spaceWidth; // Add word width PLUS space width
+        currentWord = "";
+      }
+      if (c == '\n') {
+        cursorX = marginX;
+        bodyBaselineY += bodyLineHeight;
+      }
+    } else {
+      currentWord += c;
+    }
+  }
+
+  // 3. Static hold until user presses button
+  while (true) {
+    if (isButtonPressed() || isExtraButtonPressed()) {
+      tft.setFont();
+      return;
+    }
+    delay(10);
+  }
+}
+
+bool readPaginatedText(String textPath, String headerText) {
+  digitalWrite(TFT_CS, HIGH);
+  File txtFile = openWithRetry(textPath);
+  digitalWrite(SD_CS, HIGH);
+
+  if (!txtFile) {
+    showMessage("File missing", ST77XX_RED);
+    delay(1000);
+    return false; // Failed to open
+  }
+
+  size_t fileSize = txtFile.size();
+  char *textBuffer = (char *)malloc(fileSize + 1);
+  if (!textBuffer) {
+    txtFile.close();
+    digitalWrite(SD_CS, HIGH);
+    return false;
+  }
+  
+  size_t totalRead = txtFile.read((uint8_t *)textBuffer, fileSize);
+  textBuffer[totalRead] = '\0';
+  txtFile.close();
+  digitalWrite(SD_CS, HIGH);
+
+  String bodyText = String(textBuffer);
+  free(textBuffer);
+
+  String cleanHeader = headerText;
+  cleanHeader.replace('_', ' ');
+  int dotIndex = cleanHeader.lastIndexOf('.');
+  if (dotIndex > 0) cleanHeader = cleanHeader.substring(0, dotIndex);
+
+  int marginX = 12; 
+  int maxWidth = TFT_WIDTH - (marginX * 2);
+  int bodyLineHeight = 16; 
+  int maxBottomY = TFT_HEIGHT - 10;
+
+  tft.setFont(&FreeSerifItalic9pt7b);
+  tft.setTextSize(1);
+  int16_t x1, y1; uint16_t w1, w2, h;
+  tft.getTextBounds("a a", 0, 0, &x1, &y1, &w1, &h);
+  tft.getTextBounds("aa", 0, 0, &x1, &y1, &w2, &h);
+  int spaceWidth = w1 - w2;
+
+  int currentIdx = 0;
+  int textLen = bodyText.length();
+  bool isFirstPage = true; 
+
+  while (currentIdx < textLen) {
+    tft.fillScreen(ST77XX_BLACK);
+    
+    int cursorY = 35; 
+
+    if (cleanHeader.length() > 0 && isFirstPage) {
+      tft.setFont(&FreeSerifBold12pt7b);
+      tft.setTextColor(ST77XX_WHITE);
+      tft.setCursor(marginX, cursorY + 16); 
+      tft.print(cleanHeader);
+      cursorY += 28; 
+    }
+
+    tft.setFont(&FreeSerifItalic9pt7b);
+    tft.setTextColor(ST77XX_WHITE);
+    int cursorX = marginX;
+    int bodyBaselineY = cursorY + 12; 
+
+    String currentWord = "";
+    bool pageFull = false;
+
+    while (currentIdx < textLen && !pageFull) {
+      char c = bodyText[currentIdx];
+      
+      if (c == ' ' || c == '\n' || currentIdx == textLen - 1) {
+        if (currentIdx == textLen - 1 && c != ' ' && c != '\n') {
+          currentWord += c;
+        }
+        if (currentWord.length() > 0) {
+          uint16_t w;
+          tft.getTextBounds(currentWord, 0, 0, &x1, &y1, &w, &h);
+
+          if (cursorX + w > marginX + maxWidth) {
+            cursorX = marginX;
+            bodyBaselineY += bodyLineHeight;
+          }
+
+          if (bodyBaselineY > maxBottomY) {
+            pageFull = true;
+            break; 
+          }
+
+          tft.setCursor(cursorX, bodyBaselineY);
+          tft.print(currentWord);
+          cursorX += w + spaceWidth;
+          currentWord = "";
+        }
+        
+        if (!pageFull && c == '\n') {
+          cursorX = marginX;
+          bodyBaselineY += bodyLineHeight;
+          if (bodyBaselineY > maxBottomY) {
+             pageFull = true;
+             currentIdx++; 
+             break;
+          }
+        }
+      } else {
+        currentWord += c;
+      }
+      if (!pageFull) {
+        currentIdx++;
+      }
+    }
+
+    isFirstPage = false; 
+
+    bool waiting = true;
+    while (waiting) {
+      if (isButtonPressed()) waiting = false; // Move to next page
+      if (isExtraButtonPressed()) {
+        tft.setFont();
+        return false; // Exit immediately, user pressed Back
+      }
+      delay(10);
+    }
+  }
+  
+  tft.setFont();
+  return true; // Exit successfully, user advanced past the final page
+}
+
+void readRandomScripture(String textPath, int speedMs, String bgPath) {
+  digitalWrite(TFT_CS, HIGH);
+  File txtFile = openWithRetry(textPath);
+  digitalWrite(SD_CS, HIGH);
+
+  if (!txtFile) {
+    Serial.print("Scripture file missing: ");
+    Serial.println(textPath);
+    return;
+  }
+
+  size_t fileSize = txtFile.size();
+  char *textBuffer = (char *)malloc(fileSize + 1);
+  if (!textBuffer) {
+    txtFile.close();
+    digitalWrite(SD_CS, HIGH);
+    return;
+  }
+  
+  size_t totalRead = txtFile.read((uint8_t *)textBuffer, fileSize);
+  textBuffer[totalRead] = '\0';
+  txtFile.close();
+  digitalWrite(SD_CS, HIGH);
+
+  String fullContent = String(textBuffer);
+  free(textBuffer); // Deallocate memory early
+
+  // Count scripture entries using "---"
+  int totalEntries = 1;
+  int pos = 0;
+  while ((pos = fullContent.indexOf("\n---", pos)) != -1) {
+    totalEntries++;
+    pos += 4;
+  }
+
+  int targetIndex = esp_random() % totalEntries;
+
+  // Extract chosen scripture entry
+  int currentIdx = 0;
+  int startPos = 0;
+  int endPos = fullContent.length();
+
+  pos = 0;
+  while (currentIdx < targetIndex) {
+    int delim = fullContent.indexOf("\n---", pos);
+    if (delim == -1) break;
+    startPos = delim + 4;
+    pos = startPos;
+    currentIdx++;
+  }
+
+  int nextDelim = fullContent.indexOf("\n---", startPos);
+  if (nextDelim != -1) {
+    endPos = nextDelim;
+  }
+
+  String selectedEntry = fullContent.substring(startPos, endPos);
+  selectedEntry.trim();
+
+  // Separate line 1 (Reference) from body text
+  int firstLineEnd = selectedEntry.indexOf('\n');
+  String locationRef = "";
+  String bodyText = "";
+
+  if (firstLineEnd != -1) {
+    locationRef = selectedEntry.substring(0, firstLineEnd);
+    locationRef.trim();
+    bodyText = selectedEntry.substring(firstLineEnd + 1);
+    bodyText.trim();
+  } else {
+    bodyText = selectedEntry; // Fallback if no header line present
+  }
+
+  // Render full static block onto the display
+  displayStaticText(locationRef, bodyText, bgPath);
+}
+
+void readTextFile(int index, int speedMs) {
+  String path = "/gallery/" + String(index) + ".txt";
+  readTextFileCustom(path, speedMs, ""); // Reads standard gallery text with black background
 }
 
 void showTVStatic(int duration_ms) {
@@ -296,3 +632,4 @@ void sleepDisplay() {
   tft.writeCommand(0x10); // ST7789 SLPIN (Sleep In) command
   tft.endWrite();
 }
+

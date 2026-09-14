@@ -38,8 +38,8 @@ void enterDeepSleep() {
 
 int loadTextSpeed() {
   prefs.begin("retrospect", true);
-  // Default base speed set to 300ms for a more comfortable reading experience
-  int speedMs = prefs.getInt("text_speed", 330); 
+  // Default base speed set to 250ms for a more comfortable reading experience
+  int speedMs = prefs.getInt("text_speed", 250); 
   prefs.end();
   return speedMs;
 }
