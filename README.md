@@ -1,44 +1,111 @@
-Retrospectr
-An open-source hardware project powered by the Seeed Studio XIAO ESP32-C3, featuring a compact display, interactive controls, and portable battery support. The 3D-printable enclosure is a modified remix based on the CYD Retro Mini TV by DynaMight1124.
+# Retrospectr
 
-🛠️ Hardware Specifications
-Microcontroller: Seeed Studio XIAO ESP32-C3 (RISC-V 32-bit single-core microprocessor with Wi-Fi and Bluetooth 5)
+**Retrospectr** is an open-source hardware project powered by the **Seeed Studio XIAO ESP32-C3**, featuring a compact TFT display, interactive controls, microSD storage, and portable battery support.
 
-Display: 1.69-inch TFT Display (Driver: ST7789, Resolution: 240×280)
+The 3D-printable enclosure is a modified remix based on the **CYD Retro Mini TV by DynaMight1124**.
 
-Input Controls:
+---
 
-- ALPS Rotary Encoder Button
+## 🛠️ Hardware Specifications
 
-- Push Button (6x6x10mm)
+| Component           | Specification                                                               |
+| ------------------- | --------------------------------------------------------------------------- |
+| **Microcontroller** | Seeed Studio XIAO ESP32-C3 — RISC-V 32-bit single-core, Wi-Fi & Bluetooth 5 |
+| **Display**         | 1.69-inch TFT, ST7789 driver, 240 × 280 resolution                          |
+| **Rotary Input**    | ALPS Rotary Encoder with push button                                        |
+| **Push Button**     | 6 × 6 × 10 mm tactile push button                                           |
+| **Storage**         | MicroSD card reader, supporting 16 GB SDHC                                  |
+| **Battery**         | 1S 3.7 V, 1,200 mAh LiPo battery                                            |
 
-Storage: Micro SD Card Reader with 16 GB SDHC card support
+---
 
-Power Management: 1S 3.7V 1,200mAh LiPo Battery
+## 📁 Repository Structure
 
-📁 Repository Structure
-/3DDesign/ - Contains mechanical CAD files (including Fusion 360 models like Casing design.f3z / .f3d) for 3D printing the enclosure.
+```text
+Retrospectr/
+├── 3DDesign/
+│   └── Mechanical CAD files and 3D-printable enclosure designs
+│
+├── src/
+│   └── Python tools for image processing, Bible verse processing,
+│       and component testing
+│
+├── main/
+│   └── Main program and firmware uploaded to the ESP32-C3
+│
+└── docs/
+    └── Project documentation and SD card formatting information
+```
 
-/src/ - Source code for python tools to process image and bible verses and test code for the components
+### Directory Details
 
-/main/ - Main program uploaded to the ESP32C3
+* **`3DDesign/`** — Contains the mechanical CAD files for the enclosure, including Fusion 360 files such as `Casing design.f3z` and `.f3d` files.
+* **`src/`** — Contains Python tools for processing images and Bible verses, along with component test code.
+* **`main/`** — Contains the main firmware/program uploaded to the ESP32-C3.
+* **`docs/`** — Contains project documentation, including the required SD card format and related files.
 
-/docs/ - File used in project including sd card format used in the project
+---
 
-🚀 Getting Started
-Clone the repository:
+## 🚀 Getting Started
 
-Bash
+### 1. Clone the Repository
+
+```bash
 git clone https://github.com/your-username/Retrospectr.git
-Hardware Assembly & 3D Printing:
+cd Retrospectr
+```
 
-Head over to the 3DDesign/ folder to check out the casing files for printing your own enclosure.
+### 2. 3D Print the Enclosure
 
-Wire the components according to the specifications (XIAO ESP32-C3 connected to the ST7789 display, ALPS rotary encoder, push button, and micro SD card reader).
+Navigate to the [`3DDesign/`](./3DDesign/) directory and select the appropriate CAD files to create your own enclosure.
 
+The enclosure is a modified remix of the **CYD Retro Mini TV by DynaMight1124**.
 
+### 3. Assemble the Hardware
 
-📄 License
-Firmware & Code: Open-source. Feel free to fork, modify, and build upon the software.
+Connect the components according to the project specifications:
 
-3D Design Files: Licensed under the Creative Commons Attribution-NonCommercial (CC BY-NC 4.0) license. This design is a modification of the CYD Retro Mini TV by DynaMight1124. You are free to share and remix the enclosure for non-commercial purposes with proper attribution.
+* Seeed Studio XIAO ESP32-C3
+* ST7789 1.69-inch TFT display
+* ALPS rotary encoder
+* Push button
+* MicroSD card reader
+* 1S 3.7 V 1,200 mAh LiPo battery
+
+Refer to the [`docs/`](./docs/) directory for additional project documentation and configuration details.
+
+---
+
+## 🔧 Project Overview
+
+Retrospectr combines a compact custom enclosure with an ESP32-C3-based embedded system, providing:
+
+* 📺 Compact TFT display
+* 🎛️ Rotary encoder navigation
+* 🔘 Physical push-button input
+* 💾 MicroSD-based storage
+* 🔋 Portable LiPo battery power
+* 🖨️ 3D-printable custom enclosure
+* 🧩 Open-source hardware and software
+
+---
+
+## 📄 License
+
+### Firmware & Code
+
+The firmware and software are **open-source**. You are free to fork, modify, and build upon the software.
+
+### 3D Design Files
+
+The 3D enclosure design is licensed under the **Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)** license.
+
+The enclosure is a modification of the **CYD Retro Mini TV by DynaMight1124**. You are free to share and remix the design for **non-commercial purposes**, provided that appropriate attribution is given to the original creator and this project.
+
+---
+
+## 🙏 Credits
+
+* **Seeed Studio** — XIAO ESP32-C3
+* **DynaMight1124** — Original CYD Retro Mini TV enclosure design
+* **Retrospectr** — Hardware modifications, firmware, and project development

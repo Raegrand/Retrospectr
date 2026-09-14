@@ -1,0 +1,1 @@
+Put image (.bin) and text (.txt) in here, name the file as a number from 1
